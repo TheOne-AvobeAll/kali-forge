@@ -8,7 +8,7 @@ from typing import Sequence
 from .config import AppConfig
 from .executor import CommandRunner
 from .lab import LabConfig, load_lab_config, save_default_lab_config
-from .plan import ExecutionPlan, load_plan, save_default_plan
+from .plan import ExecutionPlan, load_plan, save_default_plan, validate_plan
 from .policy import get_policy, list_policies
 from .social import evaluate_social_signal
 from .workflow import get_workflow, list_workflows, parse_command_step
@@ -56,8 +56,11 @@ def build_parser() -> argparse.ArgumentParser:
     init_plan_parser.add_argument("path", nargs="?", default="kali-forge.plan.json", help="Target path for the plan file.")
     show_plan_parser = plan_subparsers.add_parser("show", help="Render an execution plan from disk.")
     show_plan_parser.add_argument("path", nargs="?", default="kali-forge.plan.json", help="Path to the plan file.")
+    validate_plan_parser = plan_subparsers.add_parser("validate", help="Validate a saved execution plan before execution.")
+    validate_plan_parser.add_argument("path", nargs="?", default="kali-forge.plan.json", help="Path to the plan file.")
     run_plan_parser = plan_subparsers.add_parser("run", help="Execute a saved execution plan.")
     run_plan_parser.add_argument("path", nargs="?", default="kali-forge.plan.json", help="Path to the plan file.")
+    run_plan_parser.add_argument("--dry-run", action="store_true", help="Validate and print each planned step without executing it.")
 
     social_parser = subparsers.add_parser("social", help="Review social content against approved security policies.")
     social_subparsers = social_parser.add_subparsers(dest="social_command", required=True)
@@ -169,8 +172,38 @@ def main(argv: Sequence[str] | None = None) -> int:
             plan = load_plan(args.path)
             print(json.dumps(plan.to_dict(), indent=2, sort_keys=True))
             return 0
+        if args.plan_command == "validate":
+            try:
+                result = validate_plan(args.path)
+            except (FileNotFoundError, ValueError, TypeError) as exc:
+                print(f"Error: {exc}", file=sys.stderr)
+                return 2
+            print(json.dumps(result, indent=2, sort_keys=True))
+            return 0 if result["valid"] else 1
         if args.plan_command == "run":
-            plan = load_plan(args.path)
+            try:
+                plan = load_plan(args.path)
+                result = validate_plan(plan)
+            except (FileNotFoundError, ValueError, TypeError) as exc:
+                print(f"Error: {exc}", file=sys.stderr)
+                return 2
+
+            if not result["valid"]:
+                print(json.dumps(result, indent=2, sort_keys=True), file=sys.stderr)
+                return 1
+
+            if args.dry_run:
+                print(json.dumps({
+                    "plan": plan.name,
+                    "dry_run": True,
+                    "step_count": len(plan.steps),
+                    "steps": [
+                        {"name": step.name, "command": step.command, "allow_failure": step.allow_failure}
+                        for step in plan.steps
+                    ],
+                }, indent=2, sort_keys=True))
+                return 0
+
             runner = CommandRunner(AppConfig())
             for step in plan.steps:
                 result = runner.run(parse_command_step(step.command))
