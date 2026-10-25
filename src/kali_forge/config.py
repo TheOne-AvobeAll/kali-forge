@@ -16,12 +16,15 @@ class AppConfig:
         "printf",
         "pwd",
         "ls",
-        "python",
-        "python3",
-        "bash",
         "cat",
         "grep",
         "which",
+        "head",
+        "tail",
+        "wc",
+        "uname",
+        "true",
+        "false",
     )
     timeout_seconds: int = 30
     max_output_bytes: int = 20_000
