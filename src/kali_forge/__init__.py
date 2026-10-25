@@ -1,26 +1,81 @@
-from kali_forge.lab import LabConfig, load_lab_config, save_default_lab_config
+from __future__ import annotations
+
+import json
+from dataclasses import dataclass
+from pathlib import Path
 
 
-def test_lab_config_defaults_are_valid() -> None:
-    config = LabConfig()
-    assert config.name == "default-lab"
-    assert config.allowed_commands
-    assert config.timeout_seconds > 0
+@dataclass(frozen=True)
+class PlanStep:
+    """A single execution step inside a plan."""
+
+    name: str
+    command: str
+    allow_failure: bool = False
+
+    def __post_init__(self) -> None:
+        if not self.name.strip():
+            raise ValueError("Plan step name must not be empty.")
+        if not self.command.strip():
+            raise ValueError("Plan step command must not be empty.")
+        object.__setattr__(self, "name", self.name.strip())
+        object.__setattr__(self, "command", self.command.strip())
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "name": self.name,
+            "command": self.command,
+            "allow_failure": self.allow_failure,
+        }
 
 
-def test_lab_config_save_and_load_round_trip(tmp_path) -> None:
-    target = tmp_path / "lab.json"
-    saved = save_default_lab_config(target)
-    loaded = load_lab_config(target)
-    assert saved.name == loaded.name
-    assert saved.allowed_commands == loaded.allowed_commands
-    assert saved.workdir == loaded.workdir
+@dataclass(frozen=True)
+class ExecutionPlan:
+    """A persisted execution plan for deterministic local workflows."""
+
+    name: str = "default-plan"
+    description: str = "Default local execution plan"
+    steps: tuple[PlanStep, ...] = (
+        PlanStep(name="greet", command="echo hello from kali-forge"),
+        PlanStep(name="cwd", command="pwd"),
+    )
+
+    def __post_init__(self) -> None:
+        if not self.name.strip():
+            raise ValueError("Plan name must not be empty.")
+        if not self.description.strip():
+            raise ValueError("Plan description must not be empty.")
+        if not self.steps:
+            raise ValueError("Plan steps must not be empty.")
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "name": self.name,
+            "description": self.description,
+            "steps": [step.to_dict() for step in self.steps],
+        }
 
 
-def test_lab_config_rejects_empty_name() -> None:
-    try:
-        LabConfig(name=" ")
-    except ValueError:
-        pass
-    else:
-        raise AssertionError("Expected ValueError for empty lab name.")
+def save_default_plan(path: str | Path) -> ExecutionPlan:
+    plan = ExecutionPlan()
+    destination = Path(path)
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    destination.write_text(json.dumps(plan.to_dict(), indent=2, sort_keys=True), encoding="utf-8")
+    return plan
+
+
+def load_plan(path: str | Path) -> ExecutionPlan:
+    payload = json.loads(Path(path).read_text(encoding="utf-8"))
+    steps = tuple(
+        PlanStep(
+            name=step.get("name", "unnamed-step"),
+            command=step.get("command", ""),
+            allow_failure=bool(step.get("allow_failure", False)),
+        )
+        for step in payload.get("steps", [])
+    )
+    return ExecutionPlan(
+        name=payload.get("name", "default-plan"),
+        description=payload.get("description", "Default local execution plan"),
+        steps=steps,
+    )
