@@ -9,6 +9,8 @@ from .config import AppConfig
 from .executor import CommandRunner
 from .lab import LabConfig, load_lab_config, save_default_lab_config
 from .plan import ExecutionPlan, load_plan, save_default_plan
+from .policy import get_policy, list_policies
+from .social import evaluate_social_signal
 from .workflow import get_workflow, list_workflows, parse_command_step
 
 
@@ -57,6 +59,21 @@ def build_parser() -> argparse.ArgumentParser:
     run_plan_parser = plan_subparsers.add_parser("run", help="Execute a saved execution plan.")
     run_plan_parser.add_argument("path", nargs="?", default="kali-forge.plan.json", help="Path to the plan file.")
 
+    social_parser = subparsers.add_parser("social", help="Review social content against approved security policies.")
+    social_subparsers = social_parser.add_subparsers(dest="social_command", required=True)
+
+    social_policy_parser = social_subparsers.add_parser("policy", help="Inspect social security policies.")
+    social_policy_subparsers = social_policy_parser.add_subparsers(dest="social_policy_command", required=True)
+    social_policy_subparsers.add_parser("list", help="List available social security policies.")
+    show_policy_parser = social_policy_subparsers.add_parser("show", help="Display a policy definition.")
+    show_policy_parser.add_argument("name", help="Name of the policy profile.")
+
+    assess_parser = social_subparsers.add_parser("assess", help="Assess a social signal using an approved policy.")
+    assess_parser.add_argument("content", help="Text content or message to assess.")
+    assess_parser.add_argument("--source", required=True, help="Social source (for example: twitter, linkedin, mastodon).")
+    assess_parser.add_argument("--handle", default="unknown", help="Handle or account name associated with the content.")
+    assess_parser.add_argument("--policy", default="brand-protection", help="Policy name to use for evaluation.")
+
     return parser
 
 
@@ -68,6 +85,16 @@ def _print_workflow_list() -> None:
 def _print_workflow_details(name: str) -> None:
     wf = get_workflow(name)
     print(json.dumps(wf.to_dict(), indent=2, sort_keys=True))
+
+
+def _print_policy_list() -> None:
+    for policy in list_policies():
+        print(f"- {policy.name}: {policy.description}")
+
+
+def _print_policy_details(name: str) -> None:
+    policy = get_policy(name)
+    print(json.dumps(policy.to_dict(), indent=2, sort_keys=True))
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -153,6 +180,24 @@ def main(argv: Sequence[str] | None = None) -> int:
                     print(result.stderr, end="", file=sys.stderr)
                 if result.returncode != 0 and not step.allow_failure:
                     return result.returncode
+            return 0
+
+    if args.command == "social":
+        if args.social_command == "policy":
+            if args.social_policy_command == "list":
+                _print_policy_list()
+                return 0
+            if args.social_policy_command == "show":
+                _print_policy_details(args.name)
+                return 0
+        if args.social_command == "assess":
+            assessment = evaluate_social_signal(
+                args.content,
+                args.source,
+                args.policy,
+                args.handle,
+            )
+            print(json.dumps(assessment.to_dict(), indent=2, sort_keys=True))
             return 0
 
     parser.error(f"Unsupported command: {args.command}")
