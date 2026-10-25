@@ -1,10 +1,7 @@
-"""Package exports for kali-forge."""
+from __future__ import annotations
 
-from .config import AppConfig
-from .executor import CommandRunner, ExecutionResult
-from .lab import LabConfig
-from .workflow import WorkflowSpec
+from .cli import main
 
-__all__ = ["AppConfig", "CommandRunner", "ExecutionResult", "LabConfig", "WorkflowSpec"]
 
-__version__ = "0.1.0"
+if __name__ == "__main__":
+    raise SystemExit(main())

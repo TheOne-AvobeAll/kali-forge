@@ -1,55 +1,79 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+import json
+from dataclasses import dataclass, field
+from pathlib import Path
 
 
 @dataclass(frozen=True)
-class WorkflowSpec:
-    """A deterministic workflow made of allowlisted shell steps."""
+class LabConfig:
+    """Local lab configuration for an authorized environment."""
 
-    name: str
-    description: str
-    steps: tuple[str, ...]
+    name: str = "default-lab"
+    workdir: str = "."
+    allowed_commands: tuple[str, ...] = (
+        "echo",
+        "printf",
+        "pwd",
+        "ls",
+        "python",
+        "python3",
+        "bash",
+    )
+    timeout_seconds: int = 30
+    max_output_bytes: int = 20_000
+    environment_allowlist: tuple[str, ...] = (
+        "PATH",
+        "HOME",
+        "TERM",
+        "USER",
+        "PYTHONPATH",
+    )
+    allowed_paths: tuple[str, ...] = field(default_factory=lambda: (".",))
 
     def __post_init__(self) -> None:
         if not self.name.strip():
-            raise ValueError("Workflow name must not be empty.")
-        if not self.description.strip():
-            raise ValueError("Workflow description must not be empty.")
-        if not self.steps:
-            raise ValueError("Workflow steps must not be empty.")
-        object.__setattr__(self, "name", self.name.strip())
-        object.__setattr__(self, "description", self.description.strip())
-        object.__setattr__(self, "steps", tuple(str(step).strip() for step in self.steps if str(step).strip()))
+            raise ValueError("Lab name cannot be empty.")
+        if self.timeout_seconds <= 0:
+            raise ValueError("timeout_seconds must be greater than zero.")
+        if self.max_output_bytes <= 0:
+            raise ValueError("max_output_bytes must be greater than zero.")
+        if not self.allowed_paths:
+            raise ValueError("At least one allowed path must be configured.")
 
     def to_dict(self) -> dict[str, object]:
         return {
             "name": self.name,
-            "description": self.description,
-            "steps": list(self.steps),
+            "workdir": self.workdir,
+            "allowed_commands": list(self.allowed_commands),
+            "timeout_seconds": self.timeout_seconds,
+            "max_output_bytes": self.max_output_bytes,
+            "environment_allowlist": list(self.environment_allowlist),
+            "allowed_paths": list(self.allowed_paths),
         }
 
 
-BUILTIN_WORKFLOWS: dict[str, WorkflowSpec] = {
-    "hello-world": WorkflowSpec(
-        name="hello-world",
-        description="A minimal workflow that prints a greeting and reports the current directory.",
-        steps=("echo hello from kali-forge", "pwd"),
-    ),
-    "list-env": WorkflowSpec(
-        name="list-env",
-        description="Shows a small, safe view of the local environment in a controlled order.",
-        steps=("printf '%s\\n' \"$PATH\"", "echo user-ready"),
-    ),
-}
+def save_default_lab_config(path: str | Path) -> LabConfig:
+    config = LabConfig()
+    destination = Path(path)
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    destination.write_text(json.dumps(config.to_dict(), indent=2, sort_keys=True), encoding="utf-8")
+    return config
 
 
-def list_workflows() -> tuple[WorkflowSpec, ...]:
-    return tuple(BUILTIN_WORKFLOWS.values())
+def load_lab_config(path: str | Path) -> LabConfig:
+    payload = json.loads(Path(path).read_text(encoding="utf-8"))
+    return LabConfig(
+        name=payload.get("name", "default-lab"),
+        workdir=payload.get("workdir", "."),
+        allowed_commands=tuple(payload.get("allowed_commands", ())),
+        timeout_seconds=int(payload.get("timeout_seconds", 30)),
+        max_output_bytes=int(payload.get("max_output_bytes", 20_000)),
+        environment_allowlist=tuple(
+            payload.get("environment_allowlist", ("PATH", "HOME", "TERM", "USER", "PYTHONPATH"))
+        ),
+        allowed_paths=tuple(payload.get("allowed_paths", (".",))),
+    )
 
 
-def get_workflow(name: str) -> WorkflowSpec:
-    workflow = BUILTIN_WORKFLOWS.get(name.strip())
-    if workflow is None:
-        raise ValueError(f"Workflow '{name}' is not available.")
-    return workflow
+__all__ = ["LabConfig", "save_default_lab_config", "load_lab_config"]

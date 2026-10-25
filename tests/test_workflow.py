@@ -1,55 +1,28 @@
-from __future__ import annotations
-
-from dataclasses import dataclass
+from kali_forge.workflow import WorkflowSpec, get_workflow, list_workflows, parse_command_step
 
 
-@dataclass(frozen=True)
-class WorkflowSpec:
-    """A deterministic workflow made of allowlisted shell steps."""
-
-    name: str
-    description: str
-    steps: tuple[str, ...]
-
-    def __post_init__(self) -> None:
-        if not self.name.strip():
-            raise ValueError("Workflow name must not be empty.")
-        if not self.description.strip():
-            raise ValueError("Workflow description must not be empty.")
-        if not self.steps:
-            raise ValueError("Workflow steps must not be empty.")
-        object.__setattr__(self, "name", self.name.strip())
-        object.__setattr__(self, "description", self.description.strip())
-        object.__setattr__(self, "steps", tuple(str(step).strip() for step in self.steps if str(step).strip()))
-
-    def to_dict(self) -> dict[str, object]:
-        return {
-            "name": self.name,
-            "description": self.description,
-            "steps": list(self.steps),
-        }
+def test_list_workflows_returns_builtin_entries() -> None:
+    workflows = list_workflows()
+    assert {workflow.name for workflow in workflows} == {"hello-world", "list-env"}
 
 
-BUILTIN_WORKFLOWS: dict[str, WorkflowSpec] = {
-    "hello-world": WorkflowSpec(
-        name="hello-world",
-        description="A minimal workflow that prints a greeting and reports the current directory.",
-        steps=("echo hello from kali-forge", "pwd"),
-    ),
-    "list-env": WorkflowSpec(
-        name="list-env",
-        description="Shows a small, safe view of the local environment in a controlled order.",
-        steps=("printf '%s\\n' \"$PATH\"", "echo user-ready"),
-    ),
-}
+def test_get_workflow_returns_expected_definition() -> None:
+    workflow = get_workflow("hello-world")
+    assert workflow.name == "hello-world"
+    assert workflow.steps[0] == "echo 'hello from kali-forge'"
 
 
-def list_workflows() -> tuple[WorkflowSpec, ...]:
-    return tuple(BUILTIN_WORKFLOWS.values())
+def test_parse_command_step_handles_quotes() -> None:
+    parsed = parse_command_step("python -c \"print('x')\"")
+    assert parsed[0] == "python"
+    assert parsed[1] == "-c"
+    assert parsed[2] == "print('x')"
 
 
-def get_workflow(name: str) -> WorkflowSpec:
-    workflow = BUILTIN_WORKFLOWS.get(name.strip())
-    if workflow is None:
-        raise ValueError(f"Workflow '{name}' is not available.")
-    return workflow
+def test_workflow_rejects_empty_name() -> None:
+    try:
+        WorkflowSpec(name=" ", description="desc", steps=("echo hi",))
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("Expected ValueError for empty workflow name.")
