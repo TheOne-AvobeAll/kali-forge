@@ -1,20 +1,27 @@
-from kali_forge.config import AppConfig
-from kali_forge.executor import CommandRunner
+from pathlib import Path
+
+import pytest
+
+from kali_forge.security import ensure_within_directory, validate_allowed_executable
 
 
-def test_runner_executes_allowlisted_command() -> None:
-    runner = CommandRunner(AppConfig())
-    result = runner.run(["echo", "hello"])
-    assert result.returncode == 0
-    assert result.stdout.strip() == "hello"
-    assert result.timed_out is False
+def test_ensure_within_directory_allows_nested_paths() -> None:
+    base = Path("/tmp/kali-forge")
+    child = base / "workspace" / "notes.txt"
+    assert ensure_within_directory(child, base) == child.resolve(strict=False)
 
 
-def test_runner_rejects_unapproved_command() -> None:
-    runner = CommandRunner(AppConfig(allowed_commands=("echo",)))
-    try:
-        runner.run(["python", "-c", "print('nope')"])
-    except Exception as exc:  # pragma: no cover - defensive check for public API contract
-        assert "not in the configured allowlist" in str(exc)
-    else:
-        raise AssertionError("Expected a ValueError for unapproved command execution.")
+def test_ensure_within_directory_rejects_traversal() -> None:
+    base = Path("/tmp/kali-forge")
+    with pytest.raises(ValueError):
+        ensure_within_directory("/tmp/../etc/passwd", base)
+
+
+def test_validate_allowed_executable_rejects_untrusted_command() -> None:
+    with pytest.raises(ValueError):
+        validate_allowed_executable("rm", allowed_commands={"echo", "python"})
+
+
+def test_validate_allowed_executable_accepts_allowlisted_command() -> None:
+    executable = validate_allowed_executable("python", allowed_commands={"echo", "python"})
+    assert executable.name == "python"

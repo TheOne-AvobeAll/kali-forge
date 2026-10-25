@@ -1,27 +1,88 @@
-from pathlib import Path
+# kali-forge
 
-import pytest
+A modular, local-first security testing workflow toolkit for authorized assessments and isolated labs.
 
-from kali_forge.security import ensure_within_directory, validate_allowed_executable
+## Overview
 
+`kali-forge` is a security-first Python CLI foundation designed for deterministic, locally controlled automation. The project now includes a secure execution layer, configuration defaults, and a reusable workflow model for future lab-oriented modules.
 
-def test_ensure_within_directory_allows_nested_paths() -> None:
-    base = Path("/tmp/kali-forge")
-    child = base / "workspace" / "notes.txt"
-    assert ensure_within_directory(child, base) == child.resolve(strict=False)
+## Goals
 
+- Deterministic execution with explicit policy boundaries
+- Security-first subprocess handling
+- Local-first operation without AI runtime dependencies
+- Modular architecture that isolates workflow logic from system controls
 
-def test_ensure_within_directory_rejects_traversal() -> None:
-    base = Path("/tmp/kali-forge")
-    with pytest.raises(ValueError):
-        ensure_within_directory("/tmp/../etc/passwd", base)
+## Current structure
 
+- `src/kali_forge/cli.py` — CLI entry points
+- `src/kali_forge/config.py` — configuration defaults and validation
+- `src/kali_forge/security.py` — path and executable validation helpers
+- `src/kali_forge/executor.py` — safe subprocess execution
+- `src/kali_forge/workflow.py` — built-in workflow templates
+- `tests/` — regression tests for security-sensitive behavior
 
-def test_validate_allowed_executable_rejects_untrusted_command() -> None:
-    with pytest.raises(ValueError):
-        validate_allowed_executable("rm", allowed_commands={"echo", "python"})
+## Quick start
 
+```bash
+python -m venv .venv
+source .venv/bin/activate
+python -m pip install --upgrade pip
+python -m pip install -e .[dev]
+```
 
-def test_validate_allowed_executable_accepts_allowlisted_command() -> None:
-    executable = validate_allowed_executable("python", allowed_commands={"echo", "python"})
-    assert executable.name == "python"
+## Commands
+
+Show help:
+
+```bash
+kali-forge --help
+```
+
+Print version:
+
+```bash
+kali-forge version
+```
+
+Run a safe command (allowlisted executables only):
+
+```bash
+kali-forge run echo hello
+```
+
+Show the effective configuration:
+
+```bash
+kali-forge config --show
+```
+
+List built-in workflows:
+
+```bash
+kali-forge workflow list
+```
+
+Show a workflow definition:
+
+```bash
+kali-forge workflow show hello-world
+```
+
+Run a built-in workflow:
+
+```bash
+kali-forge workflow run hello-world
+```
+
+## Security model
+
+- No shell is used for execution; subprocess calls run with `shell=False`.
+- Executables must be explicitly allowlisted.
+- Paths must resolve within a configured working directory.
+- Command output is capped to prevent excessive memory use.
+- Default timeouts are enforced to avoid hanging operations.
+
+## Roadmap
+
+The project is intentionally a minimal but extensible foundation. The next layer should add lab orchestration, policy enforcement, and richer workflow definitions while preserving the security controls built into the core runtime.

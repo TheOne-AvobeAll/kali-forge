@@ -1,56 +1,36 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Sequence
+from pathlib import Path
 
 
 @dataclass(frozen=True)
-class WorkflowSpec:
-    """A deterministic workflow made of allowlisted shell steps."""
+class AppConfig:
+    """Application defaults for a secure, deterministic CLI runtime."""
 
-    name: str
-    description: str
-    steps: tuple[str, ...]
+    workdir: Path = Path.cwd()
+    allowed_commands: tuple[str, ...] = (
+        "echo",
+        "printf",
+        "pwd",
+        "ls",
+        "python",
+        "python3",
+        "bash",
+    )
+    timeout_seconds: int = 30
+    max_output_bytes: int = 20_000
+    environment_allowlist: tuple[str, ...] = (
+        "PATH",
+        "HOME",
+        "TERM",
+        "USER",
+        "PYTHONPATH",
+    )
 
     def __post_init__(self) -> None:
-        if not self.name.strip():
-            raise ValueError("Workflow name must not be empty.")
-        if not self.description.strip():
-            raise ValueError("Workflow description must not be empty.")
-        if not self.steps:
-            raise ValueError("Workflow steps must not be empty.")
-        object.__setattr__(self, "name", self.name.strip())
-        object.__setattr__(self, "description", self.description.strip())
-        object.__setattr__(self, "steps", tuple(str(step).strip() for step in self.steps if str(step).strip()))
-
-    def to_dict(self) -> dict[str, object]:
-        return {
-            "name": self.name,
-            "description": self.description,
-            "steps": list(self.steps),
-        }
-
-
-BUILTIN_WORKFLOWS: dict[str, WorkflowSpec] = {
-    "hello-world": WorkflowSpec(
-        name="hello-world",
-        description="A minimal workflow that prints a greeting and reports the current directory.",
-        steps=("echo hello from kali-forge", "pwd"),
-    ),
-    "list-env": WorkflowSpec(
-        name="list-env",
-        description="Shows a small, safe view of the local environment in a controlled order.",
-        steps=("printf '%s\\n' \"$PATH\"", "echo user-ready"),
-    ),
-}
-
-
-def list_workflows() -> tuple[WorkflowSpec, ...]:
-    return tuple(BUILTIN_WORKFLOWS.values())
-
-
-def get_workflow(name: str) -> WorkflowSpec:
-    workflow = BUILTIN_WORKFLOWS.get(name.strip())
-    if workflow is None:
-        raise ValueError(f"Workflow '{name}' is not available.")
-    return workflow
+        if self.timeout_seconds <= 0:
+            raise ValueError("timeout_seconds must be greater than zero.")
+        if self.max_output_bytes <= 0:
+            raise ValueError("max_output_bytes must be greater than zero.")
+        object.__setattr__(self, "workdir", Path(self.workdir).expanduser().resolve())

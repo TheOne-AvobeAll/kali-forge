@@ -97,8 +97,7 @@ def main(argv: Sequence[str] | None = None) -> int:
 
         if args.workflow_command == "run":
             workflow = get_workflow(args.name)
-            config = AppConfig()
-            runner = CommandRunner(config)
+            runner = CommandRunner(AppConfig())
             for step in workflow.steps:
                 command_parts = step.split()
                 if not command_parts:

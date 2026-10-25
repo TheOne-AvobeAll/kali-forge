@@ -1,56 +1,74 @@
 from __future__ import annotations
 
-import shutil
-from pathlib import Path
-from typing import Iterable, Sequence
+import os
+import subprocess
+from dataclasses import dataclass
+from typing import Sequence
+
+from .config import AppConfig
+from .security import ensure_within_directory, validate_allowed_executable, validate_command_arguments
 
 
-def ensure_within_directory(target: str | Path, base_dir: str | Path) -> Path:
-    """Resolve a target path and ensure it stays within a configured base directory."""
-    base_path = Path(base_dir).expanduser().resolve()
-    candidate = Path(target).expanduser().resolve(strict=False)
-
-    try:
-        candidate.relative_to(base_path)
-    except ValueError as exc:
-        raise ValueError(f"Path '{target}' escapes the allowed directory '{base_dir}'.") from exc
-
-    return candidate
+@dataclass(frozen=True)
+class ExecutionResult:
+    command: tuple[str, ...]
+    returncode: int
+    stdout: str
+    stderr: str
+    timed_out: bool = False
 
 
-def validate_command_arguments(arguments: Sequence[str]) -> tuple[str, ...]:
-    """Reject empty or malformed command arguments as part of safe execution validation."""
-    cleaned: list[str] = []
-    for value in arguments:
-        if value is None:
-            raise ValueError("Command arguments must not be None.")
-        normalized = str(value).strip()
-        if not normalized:
-            raise ValueError("Command arguments must not be empty.")
-        cleaned.append(normalized)
-    if not cleaned:
-        raise ValueError("A command must include at least one argument.")
-    return tuple(cleaned)
+class CommandRunner:
+    """Execute allowlisted commands with deterministic runtime guards."""
 
+    def __init__(self, config: AppConfig | None = None):
+        self.config = config or AppConfig()
 
-def validate_allowed_executable(
-    executable: str | Path,
-    allowed_commands: Iterable[str] | None = None,
-) -> Path:
-    """Resolve an executable and ensure it is explicitly allowlisted."""
-    name = str(executable).strip()
-    if not name:
-        raise ValueError("Executable path cannot be empty.")
+    def run(self, argv: Sequence[str]) -> ExecutionResult:
+        if not argv:
+            raise ValueError("A command must be passed to run().")
 
-    resolved = shutil.which(name)
-    if resolved is None:
-        raise FileNotFoundError(f"Executable '{name}' is not available on PATH.")
+        cleaned = validate_command_arguments(argv)
+        executable = validate_allowed_executable(cleaned[0], self.config.allowed_commands)
 
-    if allowed_commands is not None:
-        allowed = {candidate.lower() for candidate in allowed_commands if str(candidate).strip()}
-        if Path(resolved).name.lower() not in allowed:
-            raise ValueError(
-                f"Executable '{Path(resolved).name}' is not in the configured allowlist."
+        ensure_within_directory(self.config.workdir, self.config.workdir)
+
+        env = self._build_environment()
+        try:
+            completed = subprocess.run(
+                [str(executable), *list(cleaned[1:])],
+                capture_output=True,
+                text=True,
+                shell=False,
+                cwd=str(self.config.workdir),
+                timeout=self.config.timeout_seconds,
+                env=env,
+            )
+            stdout = completed.stdout[: self.config.max_output_bytes]
+            stderr = completed.stderr[: self.config.max_output_bytes]
+            return ExecutionResult(
+                command=cleaned,
+                returncode=completed.returncode,
+                stdout=stdout,
+                stderr=stderr,
+                timed_out=False,
+            )
+        except subprocess.TimeoutExpired as exc:
+            stdout = (exc.stdout or "")[: self.config.max_output_bytes]
+            stderr = (exc.stderr or "")[: self.config.max_output_bytes]
+            return ExecutionResult(
+                command=cleaned,
+                returncode=124,
+                stdout=stdout,
+                stderr=stderr,
+                timed_out=True,
             )
 
-    return Path(resolved)
+    def _build_environment(self) -> dict[str, str]:
+        sanitized: dict[str, str] = {}
+        for key in self.config.environment_allowlist:
+            value = os.environ.get(key)
+            if value is not None:
+                sanitized[key] = value
+        sanitized["PATH"] = os.environ.get("PATH", "")
+        return sanitized
