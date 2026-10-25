@@ -7,7 +7,8 @@ from typing import Sequence
 
 from .config import AppConfig
 from .executor import CommandRunner
-from .workflow import WorkflowSpec, get_workflow, list_workflows
+from .lab import LabConfig, load_lab_config, save_default_lab_config
+from .workflow import get_workflow, list_workflows
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -32,12 +33,20 @@ def build_parser() -> argparse.ArgumentParser:
     workflow_parser = subparsers.add_parser("workflow", help="Manage reusable workflow templates.")
     workflow_subparsers = workflow_parser.add_subparsers(dest="workflow_command", required=True)
     workflow_subparsers.add_parser("list", help="List available workflow templates.")
-
     show_parser = workflow_subparsers.add_parser("show", help="Show a workflow template definition.")
     show_parser.add_argument("name", help="Name of the workflow template.")
-
     run_workflow_parser = workflow_subparsers.add_parser("run", help="Execute a built-in workflow.")
     run_workflow_parser.add_argument("name", help="Name of the workflow template.")
+
+    lab_parser = subparsers.add_parser("lab", help="Manage local lab configuration files.")
+    lab_subparsers = lab_parser.add_subparsers(dest="lab_command", required=True)
+    lab_subparsers.add_parser("template", help="Print a default lab configuration template to stdout.")
+
+    init_parser = lab_subparsers.add_parser("init", help="Initialize a default lab configuration file.")
+    init_parser.add_argument("path", nargs="?", default="kali-forge.lab.json", help="Target path for the config file.")
+
+    show_parser = lab_subparsers.add_parser("show", help="Render a lab configuration from disk.")
+    show_parser.add_argument("path", nargs="?", default="kali-forge.lab.json", help="Path to the config file.")
 
     return parser
 
@@ -109,6 +118,21 @@ def main(argv: Sequence[str] | None = None) -> int:
                     print(result.stderr, end="", file=sys.stderr)
                 if result.returncode != 0:
                     return result.returncode
+            return 0
+
+    if args.command == "lab":
+        if args.lab_command == "template":
+            print(json.dumps(LabConfig().to_dict(), indent=2, sort_keys=True))
+            return 0
+
+        if args.lab_command == "init":
+            save_default_lab_config(args.path)
+            print(f"Initialized lab configuration at {args.path}")
+            return 0
+
+        if args.lab_command == "show":
+            config = load_lab_config(args.path)
+            print(json.dumps(config.to_dict(), indent=2, sort_keys=True))
             return 0
 
     parser.error(f"Unsupported command: {args.command}")

@@ -2,8 +2,9 @@
 
 from .config import AppConfig
 from .executor import CommandRunner, ExecutionResult
+from .lab import LabConfig
 from .workflow import WorkflowSpec
 
-__all__ = ["AppConfig", "CommandRunner", "ExecutionResult", "WorkflowSpec"]
+__all__ = ["AppConfig", "CommandRunner", "ExecutionResult", "LabConfig", "WorkflowSpec"]
 
 __version__ = "0.1.0"

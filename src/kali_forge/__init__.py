@@ -1,30 +1,26 @@
-from kali_forge.workflow import WorkflowSpec, get_workflow, list_workflows
+from kali_forge.lab import LabConfig, load_lab_config, save_default_lab_config
 
 
-def test_list_workflows_returns_builtin_entries() -> None:
-    workflows = list_workflows()
-    assert {workflow.name for workflow in workflows} == {"hello-world", "list-env"}
+def test_lab_config_defaults_are_valid() -> None:
+    config = LabConfig()
+    assert config.name == "default-lab"
+    assert config.allowed_commands
+    assert config.timeout_seconds > 0
 
 
-def test_get_workflow_returns_expected_definition() -> None:
-    workflow = get_workflow("hello-world")
-    assert workflow.name == "hello-world"
-    assert workflow.steps[0] == "echo hello from kali-forge"
+def test_lab_config_save_and_load_round_trip(tmp_path) -> None:
+    target = tmp_path / "lab.json"
+    saved = save_default_lab_config(target)
+    loaded = load_lab_config(target)
+    assert saved.name == loaded.name
+    assert saved.allowed_commands == loaded.allowed_commands
+    assert saved.workdir == loaded.workdir
 
 
-def test_workflow_rejects_empty_name() -> None:
+def test_lab_config_rejects_empty_name() -> None:
     try:
-        WorkflowSpec(name=" ", description="desc", steps=("echo hi",))
+        LabConfig(name=" ")
     except ValueError:
         pass
     else:
-        raise AssertionError("Expected ValueError for empty workflow name.")
-
-
-def test_workflow_rejects_empty_steps() -> None:
-    try:
-        WorkflowSpec(name="demo", description="desc", steps=())
-    except ValueError:
-        pass
-    else:
-        raise AssertionError("Expected ValueError for empty workflow steps.")
+        raise AssertionError("Expected ValueError for empty lab name.")
