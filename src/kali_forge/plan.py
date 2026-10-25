@@ -4,6 +4,10 @@ import json
 from dataclasses import dataclass
 from pathlib import Path
 
+from .config import AppConfig
+from .security import validate_allowed_executable, validate_command_arguments
+from .workflow import parse_command_step
+
 
 @dataclass(frozen=True)
 class PlanStep:
@@ -81,4 +85,55 @@ def load_plan(path: str | Path) -> ExecutionPlan:
     )
 
 
-__all__ = ["PlanStep", "ExecutionPlan", "save_default_plan", "load_plan"]
+def validate_plan(plan: ExecutionPlan | str | Path) -> dict[str, object]:
+    """Validate a plan structurally and against the configured allowlist."""
+    if isinstance(plan, (str, Path)):
+        plan = load_plan(plan)
+    if not isinstance(plan, ExecutionPlan):
+        raise TypeError("Plan validation expects an ExecutionPlan, path string, or Path object.")
+
+    cfg = AppConfig()
+    errors: list[str] = []
+    warnings: list[str] = []
+    seen_names: set[str] = set()
+
+    if not plan.name.strip():
+        errors.append("Plan name must not be empty.")
+    if not plan.description.strip():
+        errors.append("Plan description must not be empty.")
+    if not plan.steps:
+        errors.append("Plan must include at least one step.")
+
+    for step in plan.steps:
+        if not step.name.strip():
+            errors.append("A plan step name must not be empty.")
+        elif step.name in seen_names:
+            errors.append(f"Duplicate plan step name '{step.name}' detected.")
+        else:
+            seen_names.add(step.name)
+
+        if not step.command.strip():
+            errors.append(f"Plan step '{step.name}' has an empty command.")
+            continue
+
+        try:
+            tokens = parse_command_step(step.command)
+            validate_command_arguments(tokens)
+        except ValueError as exc:
+            errors.append(f"Plan step '{step.name}' has an invalid command: {exc}")
+            continue
+
+        try:
+            validate_allowed_executable(tokens[0], cfg.allowed_commands)
+        except (FileNotFoundError, ValueError) as exc:
+            errors.append(f"Plan step '{step.name}' is unsafe: {exc}")
+
+    return {
+        "valid": not errors,
+        "errors": errors,
+        "warnings": warnings,
+        "step_count": len(plan.steps),
+    }
+
+
+__all__ = ["PlanStep", "ExecutionPlan", "save_default_plan", "load_plan", "validate_plan"]
