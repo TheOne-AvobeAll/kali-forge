@@ -1,69 +1,56 @@
-# kali-forge
+from __future__ import annotations
 
-A modular, local-first security testing workflow toolkit for authorized assessments and isolated labs.
+from dataclasses import dataclass
+from typing import Sequence
 
-## Overview
 
-`kali-forge` is a security-first Python CLI foundation designed for deterministic, locally controlled automation. The initial implementation establishes the project skeleton, configuration model, and safe execution primitives needed for future workflow modules and lab tooling.
+@dataclass(frozen=True)
+class WorkflowSpec:
+    """A deterministic workflow made of allowlisted shell steps."""
 
-## Goals
+    name: str
+    description: str
+    steps: tuple[str, ...]
 
-- Deterministic execution with explicit policy boundaries
-- Security-first subprocess handling
-- Local-first operation without AI runtime dependencies
-- Modular architecture that isolates workflow logic from system controls
+    def __post_init__(self) -> None:
+        if not self.name.strip():
+            raise ValueError("Workflow name must not be empty.")
+        if not self.description.strip():
+            raise ValueError("Workflow description must not be empty.")
+        if not self.steps:
+            raise ValueError("Workflow steps must not be empty.")
+        object.__setattr__(self, "name", self.name.strip())
+        object.__setattr__(self, "description", self.description.strip())
+        object.__setattr__(self, "steps", tuple(str(step).strip() for step in self.steps if str(step).strip()))
 
-## Current structure
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "name": self.name,
+            "description": self.description,
+            "steps": list(self.steps),
+        }
 
-- `src/kali_forge/cli.py` — CLI entry points
-- `src/kali_forge/config.py` — configuration defaults and validation
-- `src/kali_forge/security.py` — path and executable validation helpers
-- `src/kali_forge/executor.py` — safe subprocess execution
-- `tests/` — regression tests for security-sensitive behavior
 
-## Quick start
+BUILTIN_WORKFLOWS: dict[str, WorkflowSpec] = {
+    "hello-world": WorkflowSpec(
+        name="hello-world",
+        description="A minimal workflow that prints a greeting and reports the current directory.",
+        steps=("echo hello from kali-forge", "pwd"),
+    ),
+    "list-env": WorkflowSpec(
+        name="list-env",
+        description="Shows a small, safe view of the local environment in a controlled order.",
+        steps=("printf '%s\\n' \"$PATH\"", "echo user-ready"),
+    ),
+}
 
-```bash
-python -m venv .venv
-source .venv/bin/activate
-python -m pip install --upgrade pip
-python -m pip install -e .[dev]
-```
 
-## Commands
+def list_workflows() -> tuple[WorkflowSpec, ...]:
+    return tuple(BUILTIN_WORKFLOWS.values())
 
-Show help:
 
-```bash
-kali-forge --help
-```
-
-Print version:
-
-```bash
-kali-forge version
-```
-
-Run a safe command (allowlisted executables only):
-
-```bash
-kali-forge run echo hello
-```
-
-Show the effective configuration:
-
-```bash
-kali-forge config --show
-```
-
-## Security model
-
-- No shell is used for execution; subprocess calls run with `shell=False`.
-- Executables must be explicitly allowlisted.
-- Paths must resolve within a configured working directory.
-- Command output is capped to prevent excessive memory use.
-- Default timeouts are enforced to avoid hanging operations.
-
-## Roadmap
-
-This repository is intentionally a minimal foundation. The next layer should add actual workflow modules such as lab orchestration, policy enforcement, and command inventory management while preserving these core security controls.
+def get_workflow(name: str) -> WorkflowSpec:
+    workflow = BUILTIN_WORKFLOWS.get(name.strip())
+    if workflow is None:
+        raise ValueError(f"Workflow '{name}' is not available.")
+    return workflow
