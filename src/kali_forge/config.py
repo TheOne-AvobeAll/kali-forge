@@ -3,7 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
-from .policy import PolicyProfile, get_policy
+from .policy import get_policy
+from .security import CommandPolicy
 
 
 @dataclass(frozen=True)
@@ -11,18 +12,8 @@ class AppConfig:
     """Runtime defaults for the secure CLI layer."""
 
     workdir: Path = Path.cwd()
-    allowed_commands: tuple[str, ...] = (
-        "echo",
-        "printf",
-        "pwd",
-        "ls",
-        "python",
-        "python3",
-        "bash",
-        "cat",
-        "grep",
-        "which",
-    )
+    command_policy: CommandPolicy = CommandPolicy()
+    allowed_commands: tuple[str, ...] = CommandPolicy().safe_commands
     timeout_seconds: int = 30
     max_output_bytes: int = 20_000
     environment_allowlist: tuple[str, ...] = (
@@ -51,9 +42,13 @@ class AppConfig:
             raise ValueError("max_output_bytes must be greater than zero.")
         if self.social_max_retention_days <= 0:
             raise ValueError("social_max_retention_days must be greater than zero.")
+
         object.__setattr__(self, "workdir", Path(self.workdir).expanduser().resolve())
         policy = get_policy(self.social_policy)
         object.__setattr__(self, "social_policy", policy.name)
+
+        object.__setattr__(self, "command_policy", CommandPolicy())
+        object.__setattr__(self, "allowed_commands", self.command_policy.safe_commands)
 
     def to_dict(self) -> dict[str, object]:
         return {
