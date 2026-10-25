@@ -3,9 +3,16 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from pathlib import Path
 from typing import Sequence
 
-from .audit import append_audit_entry, build_audit_entry, default_audit_path
+from .audit import (
+    append_audit_entry,
+    build_audit_entry,
+    default_audit_path,
+    read_audit_entries,
+    summarize_audit_entries,
+)
 from .config import AppConfig
 from .executor import CommandRunner
 from .lab import LabConfig, load_lab_config, save_default_lab_config
@@ -63,6 +70,11 @@ def build_parser() -> argparse.ArgumentParser:
     run_plan_parser.add_argument("path", nargs="?", default="kali-forge.plan.json", help="Path to the plan file.")
     run_plan_parser.add_argument("--dry-run", action="store_true", help="Validate and print each planned step without executing it.")
     run_plan_parser.add_argument("--audit-path", default=None, help="Optional path for plan execution audit logs in JSONL format.")
+    history_plan_parser = plan_subparsers.add_parser("history", help="Show recent plan execution records.")
+    history_plan_parser.add_argument("--limit", type=int, default=10, help="Maximum number of records to display.")
+    history_plan_parser.add_argument("--audit-path", default=None, help="Optional audit log path.")
+    report_plan_parser = plan_subparsers.add_parser("report", help="Summarize plan execution history.")
+    report_plan_parser.add_argument("--audit-path", default=None, help="Optional audit log path.")
 
     social_parser = subparsers.add_parser("social", help="Review social content against approved security policies.")
     social_subparsers = social_parser.add_subparsers(dest="social_command", required=True)
@@ -182,6 +194,17 @@ def main(argv: Sequence[str] | None = None) -> int:
                 return 2
             print(json.dumps(result, indent=2, sort_keys=True))
             return 0 if result["valid"] else 1
+        if args.plan_command == "history":
+            audit_path = Path(args.audit_path) if args.audit_path else default_audit_path()
+            entries = read_audit_entries(audit_path)
+            recent = entries[-args.limit :] if args.limit > 0 else entries
+            print(json.dumps({"audit_path": str(audit_path), "entries": recent}, indent=2, sort_keys=True))
+            return 0
+        if args.plan_command == "report":
+            audit_path = Path(args.audit_path) if args.audit_path else default_audit_path()
+            entries = read_audit_entries(audit_path)
+            print(json.dumps(summarize_audit_entries(entries), indent=2, sort_keys=True))
+            return 0
         if args.plan_command == "run":
             try:
                 plan = load_plan(args.path)
@@ -207,9 +230,9 @@ def main(argv: Sequence[str] | None = None) -> int:
                 return 0
 
             audit_path = Path(args.audit_path) if args.audit_path else default_audit_path()
-            auditor = CommandRunner(AppConfig())
+            runner = CommandRunner(AppConfig())
             for step in plan.steps:
-                execution_result = auditor.run(parse_command_step(step.command))
+                execution_result = runner.run(parse_command_step(step.command))
                 if execution_result.stdout:
                     print(execution_result.stdout, end="")
                 if execution_result.stderr:
